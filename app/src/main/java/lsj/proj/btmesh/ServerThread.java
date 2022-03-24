@@ -3,10 +3,11 @@ package lsj.proj.btmesh;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
-import android.os.Handler;
+import android.renderscript.RenderScript;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.Toast;
@@ -16,85 +17,83 @@ import androidx.core.graphics.drawable.DrawableCompat;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.spec.ECField;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.UUID;
 
+public class ServerThread extends BTConnectThread {
+    private final BluetoothServerSocket mmServerSocket;
 
-class ServerThread extends BTConnectThread {
-    private final BluetoothSocket mmSocket;
-    private final BluetoothDevice mmDevice;
-
-    private Handler btHandler;
-    public static String TAG = "BT";
+    public String TAG = "Bluetooth_mesh_LDP_1999";
+    public String NAME = "BTMesh Server";
     public String MY_UUID = "";
-    public BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-    public Button connectButtonFirst;
-    public static boolean running=false;
+    public static boolean running = false;
+    public Button connectButtonSecond;
     public Activity toastActivity;
-    public ServerThread(BluetoothDevice device, Button connectButtonFirst, String uuid) {
-        macAddress=device.getAddress();
+
+    public ServerThread(Button connectButtonSecond, String uuid) {
+
         this.MY_UUID=uuid;
-        running=true;
-        // Use a temporary object that is later assigned to mmSocket
-        // because mmSocket is final.
-        this.connectButtonFirst=connectButtonFirst;
-        BluetoothSocket tmp = null;
-        mmDevice = device;
-
-
+        running = true;
+        this.connectButtonSecond = connectButtonSecond;
+        // Use a temporary object that is later assigned to mmServerSocket
+        // because mmServerSocket is final.
+        Log.println(Log.ASSERT, TAG, "Trying to connect as Server");
+        BluetoothServerSocket tmp = null;
         try {
-            // Get a BluetoothSocket to connect with the given BluetoothDevice.
-            // MY_UUID is the app's UUID string, also used in the server code.
-            tmp = device.createRfcommSocketToServiceRecord(UUID.fromString(MY_UUID));
+            // MY_UUID is the app's UUID string, also used by the client code.
+            BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+            tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(NAME, UUID.fromString(MY_UUID));
         } catch (IOException e) {
-            Log.e(TAG, "Socket's create() method failed", e);
+            Log.e(TAG, "Socket's listen() method failed", e);
         }
-        mmSocket = tmp;
+        mmServerSocket = tmp;
     }
 
     public void run() {
-        // Cancel discovery because it otherwise slows down the connection.
-        bluetoothAdapter.cancelDiscovery();
-        Log.println(Log.ASSERT, TAG, "Trying to connect as client");
-        try {
-            // Connect to the remote device through the socket. This call blocks
-            // until it succeeds or throws an exception.
-            mmSocket.connect();
-        } catch (IOException connectException) {
-            // Unable to connect; close the socket and return.
-            Log.e(TAG, "Socket could not connect", connectException);
+        BluetoothSocket socket = null;
+        // Keep listening until exception occurs or a socket is returned.
+        while (true) {
             try {
-                mmSocket.close();
-            } catch (IOException closeException) {
-                Log.e(TAG, "Could not close the client socket", closeException);
-            }
-            running=false;
-            return;
-        }
 
-        // The connection attempt succeeded. Perform work associated with
-        // the connection in a separate thread.
-        Log.println(Log.ASSERT, TAG, "Success");
-        manageMyConnectedSocket(mmSocket);
-        running=false;
+                socket = mmServerSocket.accept();
+            } catch (IOException e) {
+                Log.e(TAG, "Socket's accept() method failed", e);
+                break;
+            }
+
+            if (socket != null) {
+                // A connection was accepted. Perform work associated with
+                // the connection in a separate thread.
+                manageMyConnectedSocket(socket);
+                Log.println(Log.ASSERT, TAG, "Success");
+                /*try {
+                    mmServerSocket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                break;*/
+            }
+        }
+        running = false;
     }
 
     private void manageMyConnectedSocket(BluetoothSocket mmSocket) {
-        setButtonColor(true);
-        Date currentTime;
+
+        //Date currentTime;
         String messageIn;
-
-
+        setButtonColor(true);
         try {
-            connectionInStream =mmSocket.getInputStream();
-            connectionOutStream =mmSocket.getOutputStream();
+            connectionInStream=mmSocket.getInputStream();
+            connectionOutStream=mmSocket.getOutputStream();
             while (true) {
-                currentTime= Calendar.getInstance().getTime();
+                //currentTime= Calendar.getInstance().getTime();
                 //write(currentTime.toString().getBytes());
                 messageIn=new String(read());
                 BTConnectThread.fragment.proliferate(messageIn);
                 toastOnUI(messageIn);
+
                 Thread.sleep(1500);
             }
         } catch (Exception e) {
@@ -102,6 +101,7 @@ class ServerThread extends BTConnectThread {
             Log.e(TAG, "Socket Disconnect", e);
         }
     }
+
 
 
 
@@ -128,23 +128,25 @@ class ServerThread extends BTConnectThread {
                     color=Color.GREEN;
                 else
                     color=Color.RED;
-                Drawable buttonDraw = connectButtonFirst.getBackground();
+                Drawable buttonDraw = connectButtonSecond.getBackground();
                 buttonDraw = DrawableCompat.wrap(buttonDraw);
                 DrawableCompat.setTint(buttonDraw, color);
-                connectButtonFirst.setBackground(buttonDraw);
+                connectButtonSecond.setBackground(buttonDraw);
             }
         };
         toastActivity.runOnUiThread(changeColor);
     }
 
-    // Closes the client socket and causes the thread to finish.
+
+    // Closes the connect socket and causes the thread to finish.
     public void cancel() {
         setButtonColor(false);
         try {
-            mmSocket.close();
+            mmServerSocket.close();
         } catch (IOException e) {
-            Log.e(TAG, "Could not close the client socket", e);
+
+            Log.e(TAG, "Could not close the connect socket", e);
         }
-        running=false;
+        running = false;
     }
 }
